@@ -668,31 +668,58 @@ def _open_pdf(input_data, password, autoclose):
 
 
 class PdfBookmark:
+    """
+    
+    
+    Attributes:
+        raw (FPDF_BOOKMARK):
+            
+        pdf (PdfDocument):
+            
+        level (int):
+            
+    """
     
     def __init__(self, raw, pdf, level):
         self.raw, self.pdf, self.level = raw, pdf, level
         self._dest = None
     
     def get_title(self):
+        """
+        Returns:
+            str:
+        """
         n_bytes = pdfium_c.FPDFBookmark_GetTitle(self.raw, None, 0)
         buffer = ctypes.create_string_buffer(n_bytes)
         pdfium_c.FPDFBookmark_GetTitle(self.raw, buffer, n_bytes)
         return buffer.raw[:n_bytes-2].decode("utf-16-le")
     
     def get_count(self):
+        """
+        Returns:
+            int:
+        """
         return pdfium_c.FPDFBookmark_GetCount(self.raw)
     
-    # NOTE might want to create a PdfDest helper class in the future
+    # NOTE may want to create separate PdfDest helper in the future
     def _get_dest(self):  # cached
         if self._dest is None:
             self._dest = pdfium_c.FPDFBookmark_GetDest(self.pdf, self.raw)
         return self._dest
     
     def get_index(self):
+        """
+        Returns:
+            int | None:
+        """
         val = pdfium_c.FPDFDest_GetDestPageIndex(self.pdf, self._get_dest())
         return val if val != -1 else None
     
     def get_view(self):
+        """
+        Returns:
+            (int, list[float]):
+        """
         n_params = ctypes.c_ulong()
         pos = (pdfium_c.FS_FLOAT * 4)()
         mode = pdfium_c.FPDFDest_GetView(self._get_dest(), n_params, pos)
