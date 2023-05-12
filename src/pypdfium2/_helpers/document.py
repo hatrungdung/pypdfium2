@@ -1,14 +1,13 @@
 # SPDX-FileCopyrightText: 2023 geisserml <geisserml@gmail.com>
 # SPDX-License-Identifier: Apache-2.0 OR BSD-3-Clause
 
-__all__ = ["PdfDocument", "PdfFormEnv", "PdfXObject", "PdfOutlineItem"]
+__all__ = ["PdfDocument", "PdfFormEnv", "PdfXObject", "PdfBookmark"]
 
 import os
 import ctypes
 import logging
 import functools
 from pathlib import Path
-from collections import namedtuple
 from concurrent.futures import ProcessPoolExecutor
 
 import pypdfium2.raw as pdfium_c
@@ -459,42 +458,6 @@ class PdfDocument (AutoCloseable):
         return PdfXObject(raw=raw_xobject, pdf=dest_pdf)
     
     
-    # TODO(apibreak) consider switching to a wrapper class around the raw bookmark
-    # (either with getter methods, or possibly cached properties)
-    def _get_bookmark(self, bookmark, level):
-        
-        n_bytes = pdfium_c.FPDFBookmark_GetTitle(bookmark, None, 0)
-        buffer = ctypes.create_string_buffer(n_bytes)
-        pdfium_c.FPDFBookmark_GetTitle(bookmark, buffer, n_bytes)
-        title = buffer.raw[:n_bytes-2].decode('utf-16-le')
-        
-        # TODO(apibreak) just expose count as-is rather than using two variables and doing extra work
-        count = pdfium_c.FPDFBookmark_GetCount(bookmark)
-        is_closed = True if count < 0 else None if count == 0 else False
-        n_kids = abs(count)
-        
-        dest = pdfium_c.FPDFBookmark_GetDest(self, bookmark)
-        page_index = pdfium_c.FPDFDest_GetDestPageIndex(self, dest)
-        if page_index == -1:
-            page_index = None
-        
-        n_params = ctypes.c_ulong()
-        view_pos = (pdfium_c.FS_FLOAT * 4)()
-        view_mode = pdfium_c.FPDFDest_GetView(dest, n_params, view_pos)
-        view_pos = list(view_pos)[:n_params.value]
-        
-        return PdfOutlineItem(
-            level = level,
-            title = title,
-            is_closed = is_closed,
-            n_kids = n_kids,
-            page_index = page_index,
-            view_mode = view_mode,
-            view_pos = view_pos,
-        )
-    
-    
-    # TODO(apibreak) change outline API (see above)
     def get_toc(
             self,
             max_depth = 15,
@@ -515,35 +478,35 @@ class PdfDocument (AutoCloseable):
         if seen is None:
             seen = set()
         
-        bookmark = pdfium_c.FPDFBookmark_GetFirstChild(self, parent)
+        bm_ptr = pdfium_c.FPDFBookmark_GetFirstChild(self, parent)
         
-        while bookmark:
+        while bm_ptr:
             
-            address = ctypes.addressof(bookmark.contents)
+            address = ctypes.addressof(bm_ptr.contents)
             if address in seen:
                 logger.warning("A circular bookmark reference was detected whilst parsing the table of contents.")
                 break
             else:
                 seen.add(address)
             
-            yield self._get_bookmark(bookmark, level)
+            yield PdfBookmark(bm_ptr, self, level)
             if level < max_depth-1:
                 yield from self.get_toc(
                     max_depth = max_depth,
-                    parent = bookmark,
+                    parent = bm_ptr,
                     level = level + 1,
                     seen = seen,
                 )
             
-            bookmark = pdfium_c.FPDFBookmark_GetNextSibling(self, bookmark)
+            bm_ptr = pdfium_c.FPDFBookmark_GetNextSibling(self, bm_ptr)
     
     
     @classmethod
-    def _process_page(cls, index, input_data, password, renderer, converter, pass_info, need_formenv, mk_formconfig, **kwargs):
+    def _process_page(cls, index, input_data, password, renderer, converter, pass_info, need_formenv, **kwargs):
         
         pdf = cls(input_data, password=password)
         if need_formenv:
-            pdf.init_forms(config=mk_formconfig()) if mk_formconfig else pdf.init_forms()
+            pdf.init_forms()
         
         page = pdf[index]
         bitmap = renderer(page, **kwargs)
@@ -566,7 +529,6 @@ class PdfDocument (AutoCloseable):
             page_indices = None,
             n_processes = os.cpu_count(),
             pass_info = False,
-            mk_formconfig = None,
             **kwargs
         ):
         """
@@ -586,16 +548,12 @@ class PdfDocument (AutoCloseable):
                 The number of parallel process to use.
             renderer (typing.Callable):
                 The page rendering function to use. This may be used to plug in custom renderers other than :meth:`.PdfPage.render`.
-            mk_formconfig (typing.Callable[FPDF_FORMFILLINFO] | None):
-                Optional callback returning a custom form config to use when initializing a form env in worker jobs.
             kwargs (dict):
                 Keyword arguments to the renderer.
         
         Yields:
             :data:`typing.Any`: Parameter-dependent result.
         """
-        
-        # TODO(apibreak) remove mk_formconfig parameter (bloat)
         
         if not isinstance(self._input, (Path, str)):
             raise ValueError("Can only render in parallel with file path input.")
@@ -617,7 +575,6 @@ class PdfDocument (AutoCloseable):
             converter = converter,
             pass_info = pass_info,
             need_formenv = bool(self.formenv),
-            mk_formconfig = mk_formconfig,
             **kwargs
         )
         
@@ -710,28 +667,34 @@ def _open_pdf(input_data, password, autoclose):
     return pdf, to_hold, to_close
 
 
-# TODO(apibreak) change outline API (see above)
-PdfOutlineItem = namedtuple("PdfOutlineItem", "level title is_closed n_kids page_index view_mode view_pos")
-"""
-Bookmark information.
-
-Parameters:
-    level (int):
-        Number of parent items.
-    title (str):
-        Title string of the bookmark.
-    is_closed (bool):
-        True if child items shall be collapsed, False if they shall be expanded.
-        None if the item has no descendants (i. e. ``n_kids == 0``).
-    n_kids (int):
-        Absolute number of child items, according to the PDF.
-    page_index (int | None):
-        Zero-based index of the page the bookmark points to.
-        May be None if the bookmark has no target page (or it could not be determined).
-    view_mode (int):
-        A view mode constant (:data:`PDFDEST_VIEW_*`) defining how the coordinates of *view_pos* shall be interpreted.
-    view_pos (list[float]):
-        Target position on the page the viewport should jump to when the bookmark is clicked.
-        It is a sequence of :class:`float` values in PDF canvas units.
-        Depending on *view_mode*, it may contain between 0 and 4 coordinates.
-"""
+class PdfBookmark:
+    
+    def __init__(self, raw, pdf, level):
+        self.raw, self.pdf, self.level = raw, pdf, level
+        self._dest = None
+    
+    def get_title(self):
+        n_bytes = pdfium_c.FPDFBookmark_GetTitle(self.raw, None, 0)
+        buffer = ctypes.create_string_buffer(n_bytes)
+        pdfium_c.FPDFBookmark_GetTitle(self.raw, buffer, n_bytes)
+        return buffer.raw[:n_bytes-2].decode("utf-16-le")
+    
+    def get_count(self):
+        return pdfium_c.FPDFBookmark_GetCount(self.raw)
+    
+    # NOTE might want to create a PdfDest helper class in the future
+    def _get_dest(self):  # cached
+        if self._dest is None:
+            self._dest = pdfium_c.FPDFBookmark_GetDest(self.pdf, self.raw)
+        return self._dest
+    
+    def get_index(self):
+        val = pdfium_c.FPDFDest_GetDestPageIndex(self.pdf, self._get_dest())
+        return val if val != -1 else None
+    
+    def get_view(self):
+        n_params = ctypes.c_ulong()
+        pos = (pdfium_c.FS_FLOAT * 4)()
+        mode = pdfium_c.FPDFDest_GetView(self._get_dest(), n_params, pos)
+        pos = list(pos)[:n_params.value]
+        return (mode, pos)

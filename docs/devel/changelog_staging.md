@@ -4,4 +4,5 @@
 <!-- List character: dash (-) -->
 
 # Changelog for next release
-- In `PdfDocument.render()`, fixed a bad `bitmap.close()` call that would lead to a downstream use after free when using the combination of foreign bitmap and no-copy conversion. Using foreign bitmaps was not the default and expressly not recommended.
+- `PdfDocument.get_toc()` API changed. Bookmarks are now provided as wrapper objects with getter methods, rather than as namedtuples.
+- Removed `mk_formconfig` parameter of `PdfDocument.render()`.
