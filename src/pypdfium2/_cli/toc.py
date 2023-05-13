@@ -31,8 +31,8 @@ def main(args):
         print(
             "    " * bm.level +
             "[%s%s] %s -> %s  # %s %s" % (
-                "" if count < 0 else "*" if count == 0 else "+",
-                count, bm.get_title(),
+                "-" if count < 0 else "*" if count == 0 else "+",
+                abs(count), bm.get_title(),
                 index+1 if index is not None else "?",
                 consts.ViewmodeToStr.get(view_mode),
                 round_list(view_pos, args.n_digits),
