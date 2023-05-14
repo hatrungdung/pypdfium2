@@ -54,7 +54,7 @@ class PdfDocument (AutoCloseable):
         raw (FPDF_DOCUMENT):
             The underlying PDFium document handle.
         formenv (PdfFormEnv | None):
-            Form env, if the document has forms and :meth:`.init_forms` was called.
+            Form env, if :meth:`.init_forms` was called and the document has forms.
     """
     
     def __init__(self, input, password=None, autoclose=False):
@@ -466,7 +466,7 @@ class PdfDocument (AutoCloseable):
             seen = None,
         ):
         """
-        Iterate through the bookmarks in the document's table of contents.
+        Iterate through the bookmarks in the document's table of contents (TOC).
         
         Parameters:
             max_depth (int):
@@ -669,15 +669,15 @@ def _open_pdf(input_data, password, autoclose):
 
 class PdfBookmark:
     """
-    
+    Bookmark helper class.
     
     Attributes:
         raw (FPDF_BOOKMARK):
-            
+            The underlying PDFium bookmark handle.
         pdf (PdfDocument):
-            
+            Reference to the document this bookmark belongs to.
         level (int):
-            
+            The bookmarks's nesting level in the TOC tree. Corresponds to the number of parent bookmarks.
     """
     
     def __init__(self, raw, pdf, level):
@@ -687,7 +687,7 @@ class PdfBookmark:
     def get_title(self):
         """
         Returns:
-            str:
+            str: The bookmark's title string.
         """
         n_bytes = pdfium_c.FPDFBookmark_GetTitle(self.raw, None, 0)
         buffer = ctypes.create_string_buffer(n_bytes)
@@ -697,7 +697,8 @@ class PdfBookmark:
     def get_count(self):
         """
         Returns:
-            int:
+            int: Signed number of child bookmarks. The initial state shall be closed (collapsed) if negative,
+            open (expanded) if positive. Zero if the bookmark has no descendants.
         """
         return pdfium_c.FPDFBookmark_GetCount(self.raw)
     
@@ -710,7 +711,8 @@ class PdfBookmark:
     def get_index(self):
         """
         Returns:
-            int | None:
+            int | None: Zero-based index of the page the bookmark points to.
+            May be None if the bookmark has no target page (or it could not be determined).
         """
         val = pdfium_c.FPDFDest_GetDestPageIndex(self.pdf, self._get_dest())
         return val if val != -1 else None
@@ -718,7 +720,10 @@ class PdfBookmark:
     def get_view(self):
         """
         Returns:
-            (int, list[float]):
+            (int, list[float]): A tuple of (view_mode, view_pos).
+            *view_mode* is a constant (one-of :data:`PDFDEST_VIEW_*`) defining how *view_pos* shall be interpreted.
+            *view_pos* is the target position on the page the viewport should jump to when the bookmark is clicked.
+            Depending on *view_mode*, it may contain between 0 to 4 float coordinates.
         """
         n_params = ctypes.c_ulong()
         pos = (pdfium_c.FS_FLOAT * 4)()
