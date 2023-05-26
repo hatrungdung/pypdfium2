@@ -21,7 +21,7 @@ from pypdfium2._helpers.page import PdfPage
 from pypdfium2._helpers.pageobjects import PdfObject
 from pypdfium2._helpers.attachment import PdfAttachment
 from pypdfium2._helpers._internal import consts, utils
-from pypdfium2._helpers._internal.bases import AutoCloseable
+from pypdfium2._helpers._internal.bases import AutoCloseable, AutoCastable
 
 logger = logging.getLogger(__name__)
 
@@ -667,7 +667,7 @@ def _open_pdf(input_data, password, autoclose):
     return pdf, to_hold, to_close
 
 
-class PdfBookmark:
+class PdfBookmark (AutoCastable):
     """
     Bookmark helper class.
     
@@ -689,9 +689,9 @@ class PdfBookmark:
         Returns:
             str: The bookmark's title string.
         """
-        n_bytes = pdfium_c.FPDFBookmark_GetTitle(self.raw, None, 0)
+        n_bytes = pdfium_c.FPDFBookmark_GetTitle(self, None, 0)
         buffer = ctypes.create_string_buffer(n_bytes)
-        pdfium_c.FPDFBookmark_GetTitle(self.raw, buffer, n_bytes)
+        pdfium_c.FPDFBookmark_GetTitle(self, buffer, n_bytes)
         return buffer.raw[:n_bytes-2].decode("utf-16-le")
     
     def get_count(self):
@@ -700,12 +700,12 @@ class PdfBookmark:
             int: Signed number of child bookmarks. The initial state shall be closed (collapsed) if negative,
             open (expanded) if positive. Zero if the bookmark has no descendants.
         """
-        return pdfium_c.FPDFBookmark_GetCount(self.raw)
+        return pdfium_c.FPDFBookmark_GetCount(self)
     
     # NOTE may want to create separate PdfDest helper in the future
     def _get_dest(self):  # cached
         if self._dest is None:
-            self._dest = pdfium_c.FPDFBookmark_GetDest(self.pdf, self.raw)
+            self._dest = pdfium_c.FPDFBookmark_GetDest(self.pdf, self)
         return self._dest
     
     def get_index(self):
