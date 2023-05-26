@@ -145,17 +145,28 @@ class PdfDocument (AutoCloseable):
             config (FPDF_FORMFILLINFO | None):
                 Custom form config interface to use (optional).
         """
+        
         if (self.get_formtype() == pdfium_c.FORMTYPE_NONE) or self.formenv:
             return
+        
         if not config:
+            
+            # safety check for older binaries (could be removed at some point)
+            # https://github.com/bblanchon/pdfium-binaries/issues/105
             if V_PDFIUM_IS_V8 and V_BUILDNAME == "pdfium-binaries" and int(V_LIBPDFIUM) <= 5677:
-                # https://github.com/bblanchon/pdfium-binaries/issues/105
                 raise RuntimeError("V8 enabled pdfium-binaries builds <= 5677 crash on init_forms().")
-            config = pdfium_c.FPDF_FORMFILLINFO(version=2)
+            
+            js_platform = pdfium_c.IPDF_JSPLATFORM(version=3)
+            config = pdfium_c.FPDF_FORMFILLINFO(version=2, xfa_disabled=False, jsPlatform=js_platform)
+        
         raw = pdfium_c.FPDFDOC_InitFormFillEnvironment(self, config)
         if not raw:
             raise PdfiumError(f"Initializing form env failed for document {self}.")
         self.formenv = PdfFormEnv(raw, config, self)
+        
+        ok = pdfium_c.FPDF_LoadXFA(self)
+        if not ok:
+            raise PdfiumError(f"Failed to load XFA for document {self}.")
     
     
     # TODO?(v5) consider cached property
