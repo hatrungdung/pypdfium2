@@ -30,9 +30,9 @@ def main(args):
         count, index, (view_mode, view_pos) = bm.get_count(), bm.get_index(), bm.get_view()
         print(
             "    " * bm.level +
-            "[%s%s] %s -> %s  # %s %s" % (
-                "-" if count < 0 else "*" if count == 0 else "+",
-                abs(count), bm.get_title(),
+            "[%s] %s -> %s  # %s %s" % (
+                "*" if count == 0 else f"{count}" if count < 0 else f"+{count}",
+                bm.get_title(),
                 index+1 if index is not None else "?",
                 consts.ViewmodeToStr.get(view_mode),
                 round_list(view_pos, args.n_digits),
